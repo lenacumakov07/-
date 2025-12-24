@@ -1,0 +1,178 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// === ПОЛЬЗОВАТЕЛИ ===
+model User {
+  id        String    @id @default(uuid())
+  email     String    @unique
+  username  String    @unique
+  name      String?
+  role      Role      @default(STUDENT)
+  group     String?   // для студентов --- номер группы
+  position  String?   // для преподавателей --- кафедра, должность и т.д.
+
+  favorites      Favorite[]
+  scheduleItems  ScheduleItem[] @relation("TeacherSchedule")
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([role])
+  @@index([email])
+  @@index([username])
+}
+
+enum Role {
+  STUDENT
+  TEACHER
+  GUEST
+  ADMIN
+}
+
+// === КОРПУСЫ ===
+model Building {
+  id          String    @id @default(uuid())
+  name        String    // "Главный корпус"
+  code        String    @unique // "GK", "K5"
+  description String?
+  floors      Floor[]
+  places      Place[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([code])
+}
+
+// === ЭТАЖИ ===
+model Floor {
+  id         String    @id @default(uuid())
+  number     Int       // 1, 2, ..., -1 (подвал)
+  building   Building  @relation(fields: [buildingId], references: [id])
+  buildingId String
+  places     Place[]
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([buildingId, number])
+  @@index([buildingId])
+}
+
+// === МЕСТА (аудитории, кафе и т.д.) ===
+model Place {
+  id          String      @id @default(uuid())
+  name        String      // "Аудитория 305"
+  type        PlaceType
+  description String?
+
+  // Привязка к корпусу и этажу (обязательно по ТЗ!)
+  building    Building    @relation(fields: [buildingId], references: [id])
+  buildingId  String
+  floor       Floor?      @relation(fields: [floorId], references: [id])
+  floorId     String?
+
+  // Связи
+  fromRoutes  Route[]     @relation("RouteFrom")
+  toRoutes    Route[]     @relation("RouteTo")
+  favorites   Favorite[]
+  scheduleItems ScheduleItem[]
+  qrCodes     QrLocation[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([name])
+  @@index([type])
+  @@index([buildingId])
+  @@index([floorId])
+}
+
+enum PlaceType {
+  AUDITORIUM
+  CLASSROOM
+  LABORATORY
+  OFFICE
+  CAFETERIA
+  LIBRARY
+  GYM
+  RESTROOM
+  OTHER
+}
+
+// === ИЗБРАННОЕ ===
+model Favorite {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  place     Place    @relation(fields: [placeId], references: [id], onDelete: Cascade)
+  placeId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, placeId])
+  @@index([userId])
+  @@index([placeId])
+}
+
+// === МАРШРУТЫ ===
+model Route {
+  id          String    @id @default(uuid())
+  name        String
+  from        Place     @relation("RouteFrom", fields: [fromId], references: [id])
+  fromId      String
+  to          Place     @relation("RouteTo", fields: [toId], references: [id])
+  toId        String
+  distance    Float?    // метры
+  time        Int?      // минуты
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([fromId, toId])
+  @@index([fromId])
+  @@index([toId])
+}
+
+// === РАСПИСАНИЕ ===
+model ScheduleItem {
+  id         String    @id @default(uuid())
+  place      Place     @relation(fields: [placeId], references: [id])
+  placeId    String
+
+  title      String    // "Микроэкономика"
+  group      String?   // "ЭФ-101"
+  teacher    User?     @relation("TeacherSchedule", fields: [teacherId], references: [id])
+  teacherId  String?
+
+  // Время
+  startTime  DateTime
+  endTime    DateTime
+  dayOfWeek  Int       // 1 = Пн, 2 = Вт, ..., 7 = Вс
+  weekType   WeekType? // Чёт/нечёт --- опционально на 1 этапе
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([placeId])
+  @@index([group])
+  @@index([teacherId])
+  @@index([dayOfWeek])
+}
+
+enum WeekType {
+  EVEN
+  ODD
+  BOTH
+}
+
+// === QR-ЛОКАЦИИ (для определения местоположения) ===
+model QrLocation {
+  id        String   @id @default(uuid())
+  code      String   @unique // например: "GK-3-305" или хеш
+  place     Place    @relation(fields: [placeId], references: [id])
+  placeId   String
+  createdAt DateTime @default(now())
+}
